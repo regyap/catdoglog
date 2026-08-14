@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Pawprint",
+    "slug": "pawprint-community",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "community.pawprint.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Pawprint uses your approximate location to show nearby animals and care activity.",
+        "NSUserNotificationsUsageDescription": "Pawprint can notify you when nearby animals need care or have recently been fed."
+      }
+    },
+    "plugins": [
+      ["expo-location", { "locationWhenInUsePermission": "Allow Pawprint to show nearby community sightings." }],
+      ["expo-notifications", { "sounds": [] }]
+    ],
+    "extra": { "eas": { "projectId": "REPLACE_WITH_EAS_PROJECT_ID" } }
+  }
+}
