@@ -15,7 +15,8 @@
     },
     "plugins": [
       ["expo-location", { "locationWhenInUsePermission": "Allow Pawprint to show nearby community sightings." }],
-      ["expo-notifications", { "sounds": [] }]
+      ["expo-notifications", { "sounds": [] }],
+      ["expo-image-picker", { "cameraPermission": "Allow Pawprint to photograph and crop animals for your private collection.", "photosPermission": "Allow Pawprint to add selected animal photos to your collection.", "microphonePermission": false }]
     ],
     "extra": { "eas": { "projectId": "REPLACE_WITH_EAS_PROJECT_ID" } }
   }
