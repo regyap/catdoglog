@@ -1,0 +1,64 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - name: Smoke-test standalone server
+        shell: bash
+        run: |
+          cp -r public .next/standalone/public
+          cp -r .next/static .next/standalone/.next/static
+          node .next/standalone/server.js &
+          server_pid=$!
+          trap 'kill $server_pid' EXIT
+          for attempt in {1..20}; do
+            curl --fail --silent http://127.0.0.1:3000/api/health && exit 0
+            sleep 1
+          done
+          exit 1
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: pawprint-web:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container health check
+        shell: bash
+        run: |
+          docker run -d --name pawprint-ci -p 3000:3000 pawprint-web:ci
+          trap 'docker logs pawprint-ci; docker rm -f pawprint-ci' EXIT
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:3000/api/health && exit 0
+            sleep 2
+          done
+          exit 1

@@ -1,0 +1,9 @@
+.git
+.github
+.next
+node_modules
+.agent-browser
+npm-debug.log*
+compose*.yml
+Dockerfile*
+PRODUCT.md

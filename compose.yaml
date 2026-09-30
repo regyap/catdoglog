@@ -1,0 +1,66 @@
+name: pawprint
+services:
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    image: pawprint-streamlit:local
+    container_name: pawprint-streamlit
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${PAWPRINT_STREAMLIT_PORT:-8501}:8501"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  web:
+    build:
+      context: .
+      target: runner
+    image: pawprint-web:local
+    container_name: pawprint-web
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgresql://pawprint:${POSTGRES_PASSWORD:-pawprint-local-only}@postgres:5432/pawprint
+    ports:
+      - "${PAWPRINT_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 20s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-alpine
+    container_name: pawprint-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pawprint
+      POSTGRES_USER: pawprint
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pawprint-local-only}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pawprint -d pawprint"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres-data:
