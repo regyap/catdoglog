@@ -1,0 +1,64 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pawprint
+      POSTGRES_PASSWORD: pawprint_local
+      POSTGRES_DB: pawprint
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pawprint -d pawprint"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  migrate:
+    build:
+      context: .
+      target: api
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: postgresql://pawprint:pawprint_local@db:5432/pawprint
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      PORT: "3000"
+      WEB_ORIGIN: http://${DEV_HOST_IP:-127.0.0.1}:8081
+      DATABASE_URL: postgresql://pawprint:pawprint_local@db:5432/pawprint
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  mobile:
+    profiles: ["mobile"]
+    build:
+      context: .
+      target: mobile
+    environment:
+      REACT_NATIVE_PACKAGER_HOSTNAME: ${DEV_HOST_IP:-127.0.0.1}
+      EXPO_PUBLIC_API_URL: http://${DEV_HOST_IP:-127.0.0.1}:3000
+    ports:
+      - "8081:8081"
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./App.tsx:/app/App.tsx:ro
+      - ./app.json:/app/app.json:ro
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./components:/app/components:ro
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:

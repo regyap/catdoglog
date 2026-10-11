@@ -5,6 +5,9 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "web": {
+      "bundler": "metro"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "community.pawprint.app",
@@ -14,10 +17,32 @@
       }
     },
     "plugins": [
-      ["expo-location", { "locationWhenInUsePermission": "Allow Pawprint to show nearby community sightings." }],
-      ["expo-notifications", { "sounds": [] }],
-      ["expo-image-picker", { "cameraPermission": "Allow Pawprint to photograph and crop animals for your private collection.", "photosPermission": "Allow Pawprint to add selected animal photos to your collection.", "microphonePermission": false }]
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Pawprint to show nearby community sightings."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "sounds": []
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow Pawprint to photograph and crop animals for your private collection.",
+          "photosPermission": "Allow Pawprint to add selected animal photos to your collection.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-font"
     ],
-    "extra": { "eas": { "projectId": "REPLACE_WITH_EAS_PROJECT_ID" } }
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
   }
 }

@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, AppState, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import MapView, { Callout, Marker, Region } from 'react-native-maps';
+import MapView, { Callout, Marker, Region, MapHandle } from './components/CommunityMap';
 
 type Species = 'Cat' | 'Dog' | 'Bird';
 type Animal = {
@@ -27,6 +28,15 @@ const starterFriends: Friend[] = [
 ];
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
+
+function promptText(title: string, message: string, save: (value: string) => void, _type?: string, defaultValue = '', _keyboardType?: string) {
+  if (Platform.OS === 'web') {
+    const value = window.prompt(`${title}\n${message}`, defaultValue);
+    if (value !== null) save(value);
+  } else {
+    Alert.prompt(title, message, save, 'plain-text', defaultValue);
+  }
+}
 
 const animals: Animal[] = [
   { id: 'miso', name: 'Miso', species: 'Cat', emoji: '🐱', color: '#F2A45C', distance: '180 m', area: 'Singapore garden walk', lastFed: '42 min ago', needsFood: false, friends: 8, latitude: 1.3008, longitude: 103.8637 },
@@ -57,7 +67,81 @@ function AppContent() {
   const [friendsLoaded, setFriendsLoaded] = useState(false);
   const [shareCollection, setShareCollection] = useState(true);
   const [mapRegion, setMapRegion] = useState<Region>({ latitude: 15, longitude: 15, latitudeDelta: 120, longitudeDelta: 300 });
+  const mapRef = useRef<MapHandle>(null);
+  const [followUser, setFollowUser] = useState(false);
+  const [locationEnabled, setLocationEnabled] = useState(false);
+  const [locationMessage, setLocationMessage] = useState('Tap Follow me to use your live location');
+  const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
+  const [satellite, setSatellite] = useState(false);
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const [locationAttempt, setLocationAttempt] = useState(0);
   const filtered = useMemo(() => animals.filter(a => `${a.name} ${a.species}`.toLowerCase().includes(query.toLowerCase())), [query]);
+
+  useEffect(() => {
+    const listener = AppState.addEventListener('change', state => setAppActive(state === 'active'));
+    return () => listener.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!locationEnabled || tab !== 'map' || !appActive) return;
+    let cancelled = false;
+    let subscription: Location.LocationSubscription | undefined;
+    const start = async () => {
+      setLocationMessage('Finding your location...');
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (cancelled) return;
+        if (!permission.granted) {
+          setLocationMessage('Location access denied. Allow it in Settings, then retry.');
+          setLocationEnabled(false);
+          setFollowUser(false);
+          return;
+        }
+        if (!await Location.hasServicesEnabledAsync()) throw new Error('Location services disabled');
+        if (cancelled) return;
+        subscription = await Location.watchPositionAsync({
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 5,
+          timeInterval: 3000
+        }, position => {
+          if (cancelled) return;
+          setUserLocation(position);
+          setLocationMessage(position.coords.accuracy != null
+            ? `Live location · accuracy about ${Math.round(position.coords.accuracy)} m`
+            : 'Live location');
+        });
+        if (cancelled) subscription.remove();
+      } catch {
+        if (cancelled) return;
+        setLocationMessage('Location unavailable. Check GPS and permissions, then retry.');
+        setLocationEnabled(false);
+        setFollowUser(false);
+      }
+    };
+    void start();
+    return () => { cancelled = true; subscription?.remove(); };
+  }, [locationEnabled, tab, appActive, locationAttempt]);
+
+  useEffect(() => {
+    if (!followUser || !userLocation || tab !== 'map' || !appActive) return;
+    mapRef.current?.animateToRegion({
+      latitude: userLocation.coords.latitude,
+      longitude: userLocation.coords.longitude,
+      latitudeDelta: 0.008,
+      longitudeDelta: 0.008
+    }, 700);
+  }, [userLocation, followUser, tab, appActive]);
+
+  const toggleFollow = () => {
+    if (Platform.OS === 'web' && !window.isSecureContext) {
+      setLocationMessage('Browser GPS needs HTTPS. Use the native app for location on local Wi-Fi');
+      return;
+    }
+    if (followUser) { setFollowUser(false); return; }
+    setLocationEnabled(true);
+    setFollowUser(true);
+    setLocationAttempt(value => value + 1);
+  };
 
   const syncSightings = useCallback(async () => {
     if (!apiUrl) {
@@ -105,7 +189,7 @@ function AppContent() {
     ]);
   }, [friends, shareCollection, friendsLoaded]);
 
-  const addFriend = () => Alert.prompt('Add a friend', 'Enter their Pawprint username. They will need to accept your request.', usernameInput => {
+  const addFriend = () => promptText('Add a friend', 'Enter their Pawprint username. They will need to accept your request.', usernameInput => {
     const username = usernameInput?.trim().replace(/^@/, '').toLowerCase();
     if (!username) return;
     if (friends.some(friend => friend.username.toLowerCase() === username)) {
@@ -135,7 +219,7 @@ function AppContent() {
       setPhotoCollection(current => [{ id: `${Date.now()}`, uri: photo.uri, name: safeName, createdAt: new Date().toISOString() }, ...current]);
       setTab('collection');
     };
-    Alert.prompt('Name this animal', 'The cropped photo will be added to your private collection.', save, 'plain-text', `New friend ${photoCollection.length + 1}`);
+    promptText('Name this animal', 'The cropped photo will be added to your private collection.', save, 'plain-text', `New friend ${photoCollection.length + 1}`);
   };
 
   const collect = (id: string) => setCollected(p => p.includes(id) ? p : [...p, id]);
@@ -161,7 +245,8 @@ function AppContent() {
       </Pressable>
       <Pressable style={s.cameraButton} onPress={() => void snapAndCollect()}><Ionicons name="camera" size={22} color="#fff"/><View><Text style={s.cameraTitle}>Snap & collect</Text><Text style={s.cameraSubtitle}>Take a photo, crop it, keep the memory</Text></View></Pressable>
       <View style={s.mapShell}>
-        <MapView style={s.map} region={mapRegion} onRegionChangeComplete={setMapRegion} showsCompass showsScale mapType="standard">
+        <MapView ref={mapRef} style={s.map} region={mapRegion} onRegionChangeComplete={setMapRegion} onPanDrag={() => setFollowUser(false)} showsCompass showsScale mapType={satellite ? 'hybrid' : 'standard'}>
+          {locationEnabled && userLocation && <Marker coordinate={userLocation.coords} title="You are here" description="Your private device location" pinColor="#2878D0" />}
           {animals.map(animal => <Marker key={animal.id} coordinate={{latitude:animal.latitude,longitude:animal.longitude}} onPress={() => setSelected(animal)} tracksViewChanges={false}>
             <View style={[s.petMarker, selected.id === animal.id && s.petMarkerSelected]}><Text style={s.pinEmoji}>{animal.emoji}</Text>{animal.needsFood && <View style={s.alertDot}/>}</View>
             <Callout onPress={() => setSelected(animal)}><View style={s.callout}><Text style={s.cardTitle}>{animal.name}</Text><Text style={s.muted}>{animal.species} · {animal.area}</Text><Text style={s.muted}>{animal.lastFed}</Text></View></Callout>
@@ -171,9 +256,15 @@ function AppContent() {
             <Callout><View style={s.callout}><Text style={s.cardTitle}>{item.name || 'Community sighting'}</Text><Text style={s.muted}>{item.note || 'Shared through Telegram'}</Text></View></Callout>
           </Marker>)}
         </MapView>
-        <View style={s.mapTopBar}><View style={s.mapBadge}><Text style={s.mapBadgeText}>🐾 Pet Society · {animals.length + remoteSightings.length}</Text></View><Pressable style={s.worldButton} onPress={() => setMapRegion({latitude:15,longitude:15,latitudeDelta:120,longitudeDelta:300})}><Ionicons name="earth" size={19} color="#315E4C"/><Text style={s.worldButtonText}>World</Text></Pressable></View>
+        <View style={s.mapTopBar}><View style={s.mapBadge}><Text style={s.mapBadgeText}>🐾 Pet Society · {animals.length + remoteSightings.length}</Text></View><Pressable style={s.worldButton} onPress={() => { setFollowUser(false); setMapRegion({latitude:15,longitude:15,latitudeDelta:120,longitudeDelta:300}); }}><Ionicons name="earth" size={19} color="#315E4C"/><Text style={s.worldButtonText}>World</Text></Pressable></View>
         <View style={s.mapHint}><Text style={s.mapHintText}>Pinch to zoom · tap a pet to meet them</Text></View>
       </View>
+      <View style={{flexDirection:'row', gap:10, marginBottom:10}}>
+        <Pressable style={s.worldButton} accessibilityRole="button" accessibilityLabel={followUser ? 'Pause following your location' : 'Follow your live location'} onPress={toggleFollow}><Ionicons name="locate" size={19} color="#315E4C"/><Text style={s.worldButtonText}>{followUser ? 'Following you' : 'Follow me'}</Text></Pressable>
+        <Pressable style={s.worldButton} accessibilityRole="button" accessibilityLabel="Toggle satellite map" accessibilityState={{selected:satellite}} onPress={() => setSatellite(value => !value)}><Ionicons name="layers-outline" size={19} color="#315E4C"/><Text style={s.worldButtonText}>{satellite ? 'Street view' : 'Satellite'}</Text></Pressable>
+        {locationEnabled && <Pressable style={s.worldButton} accessibilityRole="button" onPress={() => { setLocationEnabled(false); setFollowUser(false); setUserLocation(null); setLocationMessage('Location stopped'); }}><Text style={s.worldButtonText}>Stop GPS</Text></Pressable>}
+      </View>
+      <Text style={[s.muted,{marginBottom:12}]}>{locationMessage}. Your location stays on this device.</Text>
       <AnimalCard animal={selected} isCollected={collected.includes(selected.id)} isFed={fed.includes(selected.id)} onCollect={() => collect(selected.id)} onVirtualFeed={() => virtualFeed(selected.id)} onConfirmFeed={() => confirmRealFeed(selected)} />
       <Text style={s.sectionTitle}>Care nearby</Text>
       <View style={s.careCard}><View style={s.careIcon}><Ionicons name="notifications" size={20} color="#9C5C22"/></View><View style={{flex:1}}><Text style={s.cardTitle}>2 animals may need food</Text><Text style={s.muted}>Based on trusted community updates</Text></View><Ionicons name="chevron-forward" size={20} color="#85908A"/></View>

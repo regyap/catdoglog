@@ -4,6 +4,15 @@ const express = require('express');
 const { Pool } = require('pg');
 
 const app = express();
+// Local Expo web uses a separate port; permit reads from that configured origin.
+const webOrigin = process.env.WEB_ORIGIN;
+app.use((req, res, next) => {
+  if (webOrigin && req.get('origin') === webOrigin) {
+    res.set('Access-Control-Allow-Origin', webOrigin);
+    res.vary('Origin');
+  }
+  next();
+});
 app.use(express.json({ limit: '256kb' }));
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined });
 
